@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,10 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,7 +46,6 @@ import kotlin.math.sin
 
 enum class PieceColor {
     WHITE, BLACK;
-
     fun opposite() = if (this == WHITE) BLACK else WHITE
 }
 
@@ -197,30 +195,26 @@ object ChessRules {
         }
         val ortho = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
         for ((dr, dc) in ortho) {
-            var r = sq.r + dr
-            var c = sq.c + dc
+            var r = sq.r + dr; var c = sq.c + dc
             while (r in 0..7 && c in 0..7) {
                 val p = state.pieceAt(r, c)
                 if (p != null) {
                     if (p.color == byColor && (p.type == PieceType.ROOK || p.type == PieceType.QUEEN)) return true
                     break
                 }
-                r += dr
-                c += dc
+                r += dr; c += dc
             }
         }
         val diag = listOf(-1 to -1, -1 to 1, 1 to -1, 1 to 1)
         for ((dr, dc) in diag) {
-            var r = sq.r + dr
-            var c = sq.c + dc
+            var r = sq.r + dr; var c = sq.c + dc
             while (r in 0..7 && c in 0..7) {
                 val p = state.pieceAt(r, c)
                 if (p != null) {
                     if (p.color == byColor && (p.type == PieceType.BISHOP || p.type == PieceType.QUEEN)) return true
                     break
                 }
-                r += dr
-                c += dc
+                r += dr; c += dc
             }
         }
         return false
@@ -345,11 +339,9 @@ object ChessRules {
             if (leavesKingInCheck || m.isPseudoLegalOnly) {
                 if (hardcoreMode) {
                     val reason = m.illegalReason.ifEmpty {
-                        when {
-                            m.piece.type == PieceType.KING -> "Du bist mit deinem König direkt in ein angegriffenes Feld gelaufen!"
-                            m.special == SpecialMoveType.EN_PASSANT -> "En-Passant-Falle! Durch das Entfernen beider Bauern wurde die Linie auf deinen König geöffnet."
-                            else -> "Fesselung übersehen! Deine Figur (${m.piece.type.deName}) hat deinen König gedeckt – jetzt ist er ungeschützt!"
-                        }
+                        if (m.piece.type == PieceType.KING) "Du bist mit deinem König direkt in ein angegriffenes Feld gelaufen!"
+                        else if (m.special == SpecialMoveType.EN_PASSANT) "En-Passant-Falle! Durch das Entfernen beider Bauern wurde die Linie auf deinen König geöffnet."
+                        else "Fesselung übersehen! Deine Figur (${m.piece.type.deName}) hat deinen König gedeckt – jetzt ist er ungeschützt!"
                     }
                     result.add(m.copy(isPseudoLegalOnly = true, illegalReason = reason))
                 }
@@ -362,8 +354,7 @@ object ChessRules {
 
     private fun addSlidingMoves(state: BoardState, from: Pos, p: Piece, dirs: List<Pair<Int, Int>>, out: MutableList<Move>) {
         for ((dr, dc) in dirs) {
-            var r = from.r + dr
-            var c = from.c + dc
+            var r = from.r + dr; var c = from.c + dc
             while (r in 0..7 && c in 0..7) {
                 val t = state.pieceAt(r, c)
                 if (t == null) {
@@ -372,8 +363,7 @@ object ChessRules {
                     if (t.color != p.color) out.add(Move(from, Pos(r, c), p, t))
                     break
                 }
-                r += dr
-                c += dc
+                r += dr; c += dc
             }
         }
     }
@@ -445,11 +435,9 @@ object ChessAIAndCoach {
             val next = state.applyMove(m)
             val eval = minimax(next, depth - 1, Int.MIN_VALUE, Int.MAX_VALUE, !isMax)
             if (isMax && eval > bestEval) {
-                bestEval = eval
-                bestMove = m
+                bestEval = eval; bestMove = m
             } else if (!isMax && eval < bestEval) {
-                bestEval = eval
-                bestMove = m
+                bestEval = eval; bestMove = m
             }
         }
         return bestMove to bestEval
@@ -558,7 +546,7 @@ object ChessAIAndCoach {
 }
 
 // ============================================================================
-// 3. INTERAKTIVE SPEZIALREGELN & LEKTIONEN
+// 3. INTERAKTIVE SPEZIALREGELN & LEKTIONEN (EN PASSANT, FESSELUNG, PATT, ETC.)
 // ============================================================================
 
 data class ChessLesson(
@@ -615,23 +603,22 @@ object LessonRepository {
             expectedTo = Pos(2, 0)
         )
 
-        // Bauer auf f7 (1,5) -> f8 (0,5) verwandelt in Springer (♘) -> gabelt König auf g6 (2,6) und Dame auf d7 (1,3)!
         val g3 = emptyGrid().apply {
-            this[2][6] = Piece(PieceType.KING, PieceColor.BLACK, true)
-            this[1][3] = Piece(PieceType.QUEEN, PieceColor.BLACK, true)
-            this[1][5] = Piece(PieceType.PAWN, PieceColor.WHITE, true)
-            this[7][4] = Piece(PieceType.KING, PieceColor.WHITE, true)
+            this[0][7] = Piece(PieceType.KING, PieceColor.BLACK, true)
+            this[0][5] = Piece(PieceType.QUEEN, PieceColor.BLACK, true)
+            this[1][4] = Piece(PieceType.PAWN, PieceColor.WHITE, true)
+            this[2][6] = Piece(PieceType.KING, PieceColor.WHITE, true)
         }
         val lesson3 = ChessLesson(
             title = "3. Unterverwandlung zum Springer",
             subtitle = "Warum eine Dame hier falsch wäre!",
             tag = "PROFI-MOVE",
-            taskPrompt = "Ziehe deinen Bauern auf f8 und verwandle ihn in einen SPRINGER, um König (g6) und Dame (d7) gleichzeitig zu gabeln!",
-            hint = "Ziehe f7 -> f8 und wähle im Popup den Springer (♘)!",
-            successExplanation = "Königliche Gabel! Der Springer auf f8 greift gleichzeitig den König auf g6 und die Dame auf d7 an.",
+            taskPrompt = "Ziehe deinen Bauern auf e8 und verwandle ihn in einen SPRINGER, um König (h8) und Dame (f8) gleichzeitig zu gabeln!",
+            hint = "Ziehe e7 -> e8 und wähle im Popup den Springer (♘) statt der Dame!",
+            successExplanation = "Königliche Gabel! Hättest du eine Dame gewählt, hätte Schwarz dich schlagen oder patten können – der Springer gibt Schach und gewinnt die Dame!",
             initialState = BoardState(g3.map { it.toList() }, PieceColor.WHITE),
-            expectedFrom = Pos(1, 5),
-            expectedTo = Pos(0, 5),
+            expectedFrom = Pos(1, 4),
+            expectedTo = Pos(0, 4),
             expectedPromote = PieceType.KNIGHT
         )
 
@@ -677,7 +664,7 @@ object LessonRepository {
 }
 
 // ============================================================================
-// 4. UI & INTERAKTIVES BRETT
+// 4. UI & INTERAKTIVES BRETT (COMPOSE DARK MODE + PFEILE + ANALYSE)
 // ============================================================================
 
 enum class AppScreen { PLAY, LESSONS, ANALYSIS }
@@ -732,6 +719,7 @@ fun ChessMasterApp() {
         gameOverReason = null
         coachTips = emptyList()
         showCoachArrows = false
+        reviewIndex = 0
     }
 
     fun executePlayerMove(move: Move) {
@@ -846,8 +834,7 @@ fun ChessMasterApp() {
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             NavChip("Spielen & Coach", currentScreen == AppScreen.PLAY && activeLesson == null) {
-                activeLesson = null
-                currentScreen = AppScreen.PLAY
+                activeLesson = null; currentScreen = AppScreen.PLAY
             }
             NavChip("Spezial-Regeln", currentScreen == AppScreen.LESSONS || activeLesson != null) {
                 currentScreen = AppScreen.LESSONS
@@ -876,8 +863,7 @@ fun ChessMasterApp() {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(activeLesson!!.title, fontWeight = FontWeight.Bold, color = Color(0xFF1BACA6))
                                     Text("Beenden ✕", color = Color.Gray, modifier = Modifier.clickable {
-                                        activeLesson = null
-                                        resetGame()
+                                        activeLesson = null; resetGame()
                                     })
                                 }
                                 Spacer(Modifier.height(4.dp))
@@ -1066,7 +1052,7 @@ fun ChessMasterApp() {
                         Text("Spiele zuerst ein paar Züge – dann analysiert die KI hier jeden Move!", color = Color.Gray)
                     }
                 } else {
-                    val safeIdx = reviewIndex.coerceIn(0, moveHistory.size - 1)
+                    val safeIdx = reviewIndex.coerceIn(0, moveHistory.lastIndex)
                     val item = moveHistory[safeIdx]
 
                     val whiteMoves = moveHistory.filter { it.move.piece.color == PieceColor.WHITE }
@@ -1137,8 +1123,238 @@ fun ChessMasterApp() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(onClick = { if (safeIdx > 0) reviewIndex = safeIdx - 1 }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück", tint = Color.White)
+                                Icon(Icons.Default.ChevronLeft, contentDescription = "Zurück", tint = Color.White)
                             }
                             Text("Zug ${item.moveNumber}: ${item.move.toNotation()}", fontWeight = FontWeight.Bold, color = Color.White)
-                            IconButton(onClick = { if (safeIdx < moveHistory.size - 1) reviewIndex = safeIdx + 1 }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, content
+                            IconButton(onClick = { if (safeIdx < moveHistory.lastIndex) reviewIndex = safeIdx + 1 }) {
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Vor", tint = Color.White)
+                            }
+                        }
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C2026)),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, item.badge.color, RoundedCornerShape(12.dp))
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(item.badge.color, RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("${item.badge.tag} ${item.badge.label}", fontWeight = FontWeight.Black, color = Color.White, fontSize = 12.sp)
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    if (item.bestMove != null) {
+                                        Text("Bester Zug (Grün): ${item.bestMove.toNotation()}", fontSize = 12.sp, color = Color(0xFF81B64C), fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(item.explanation, fontSize = 13.sp, color = Color.White)
+                                if (item.move.piece.color == PieceColor.WHITE) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            boardState = item.boardBefore
+                                            moveHistory = moveHistory.take(safeIdx)
+                                            gameOverTitle = null
+                                            gameOverReason = null
+                                            currentScreen = AppScreen.PLAY
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81B64C))
+                                    ) {
+                                        Text("🔄 Diesen Moment nochmal spielen")
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            moveHistory.forEachIndexed { idx, m ->
+                                val active = idx == safeIdx
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (active) m.badge.color else Color(0xFF232830))
+                                        .clickable { reviewIndex = idx }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        "${m.moveNumber}. ${m.move.toNotation()} ${m.badge.tag}",
+                                        color = Color.White,
+                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (pendingPromoMove != null) {
+        val (from, to) = pendingPromoMove!!
+        val piece = boardState.pieceAt(from)
+        if (piece != null) {
+            AlertDialog(
+                onDismissRequest = { pendingPromoMove = null },
+                title = { Text("Bauernumwandlung wählen") },
+                text = {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        listOf(PieceType.QUEEN, PieceType.KNIGHT, PieceType.ROOK, PieceType.BISHOP).forEach { pt ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF2A3038))
+                                    .clickable {
+                                        pendingPromoMove = null
+                                        val isLegal = !ChessRules.isInCheck(
+                                            boardState.applyMove(Move(from, to, piece, boardState.pieceAt(to), SpecialMoveType.PROMOTION, pt)),
+                                            piece.color
+                                        )
+                                        executePlayerMove(
+                                            Move(
+                                                from, to, piece, boardState.pieceAt(to),
+                                                SpecialMoveType.PROMOTION, pt,
+                                                isPseudoLegalOnly = !isLegal,
+                                                illegalReason = if (!isLegal) "Dein König blieb nach der Umwandlung im Schach!" else ""
+                                            )
+                                        )
+                                    }
+                                    .padding(12.dp)
+                            ) {
+                                Text(pt.symbolW, fontSize = 32.sp, color = Color.White)
+                                Text(pt.deName, fontSize = 11.sp, color = Color.LightGray)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {}
+            )
+        }
+    }
+}
+
+@Composable
+fun NavChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (selected) Color(0xFF81B64C) else Color.Transparent)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(label, color = if (selected) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun ChessBoardView(
+    state: BoardState,
+    selected: Pos?,
+    legalTargets: Set<Pos>,
+    arrows: List<BoardArrow>,
+    lastMove: Move?,
+    onSquareTap: (Pos) -> Unit
+) {
+    val lightSq = Color(0xFFEBECD0)
+    val darkSq = Color(0xFF739552)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .border(2.dp, Color(0xFF2E343D), RoundedCornerShape(10.dp))
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            for (r in 0..7) {
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    for (c in 0..7) {
+                        val pos = Pos(r, c)
+                        val isLight = (r + c) % 2 == 0
+                        val isLast = lastMove != null && (lastMove.from == pos || lastMove.to == pos)
+                        val bg = when {
+                            selected == pos -> Color(0xFFF5F682)
+                            isLast -> if (isLight) Color(0xFFF5F682).copy(alpha = 0.75f) else Color(0xFFBACA2B)
+                            isLight -> lightSq
+                            else -> darkSq
+                        }
+                        val piece = state.pieceAt(r, c)
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(bg)
+                                .pointerInput(pos) { detectTapGestures { onSquareTap(pos) } },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (piece != null) {
+                                Text(
+                                    text = if (piece.color == PieceColor.WHITE) piece.type.symbolW else piece.type.symbolB,
+                                    fontSize = 34.sp,
+                                    color = if (piece.color == PieceColor.WHITE) Color(0xFFFFFFFF) else Color(0xFF111111)
+                                )
+                            }
+                            if (pos in legalTargets) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(if (piece != null) 38.dp else 14.dp)
+                                        .clip(CircleShape)
+                                        .background(if (piece != null) Color.Red.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.25f))
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (arrows.isNotEmpty()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val cellW = size.width / 8f
+                val cellH = size.height / 8f
+                for (arrow in arrows) {
+                    val start = Offset((arrow.from.c + 0.5f) * cellW, (arrow.from.r + 0.5f) * cellH)
+                    val end = Offset((arrow.to.c + 0.5f) * cellW, (arrow.to.r + 0.5f) * cellH)
+                    drawLine(
+                        color = arrow.color.copy(alpha = 0.85f),
+                        start = start,
+                        end = end,
+                        strokeWidth = cellW * 0.16f,
+                        cap = StrokeCap.Round
+                    )
+                    val angle = atan2((end.y - start.y).toDouble(), (end.x - start.x).toDouble())
+                    val headLen = cellW * 0.34f
+                    val p1 = Offset(
+                        (end.x - headLen * cos(angle - Math.PI / 6)).toFloat(),
+                        (end.y - headLen * sin(angle - Math.PI / 6)).toFloat()
+                    )
+                    val p2 = Offset(
+                        (end.x - headLen * cos(angle + Math.PI / 6)).toFloat(),
+                        (end.y - headLen * sin(angle + Math.PI / 6)).toFloat()
+                    )
+                    val path = Path().apply {
+                        moveTo(end.x, end.y)
+                        lineTo(p1.x, p1.y)
+                        lineTo(p2.x, p2.y)
+                        close()
+                    }
+                    drawPath(path, color = arrow.color.copy(alpha = 0.9f))
+                }
+            }
+        }
+    }
+}
