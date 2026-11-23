@@ -38,6 +38,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 // ============================================================================
@@ -465,8 +466,8 @@ object ChessAIAndCoach {
             var minEval = Int.MAX_VALUE
             for (m in sorted) {
                 val ev = minimax(state.applyMove(m), depth - 1, alpha, beta, true)
-                minEval = kotlin.math.min(minEval, ev)
-                beta = kotlin.math.min(beta, ev)
+                minEval = min(minEval, ev)
+                beta = min(beta, ev)
                 if (beta <= alpha) break
             }
             return minEval
